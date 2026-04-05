@@ -65,23 +65,23 @@ class QdrantService:
 
     def __init__(
         self,
-        host: str = "localhost",
-        port: int = 6333,
+        url: str = "local://qdrant_storage",
         api_key: Optional[str] = None,
         collection_name: str = "news_embeddings",
     ):
         self.collection_name = collection_name
-        self._client = self._build_client(host, port, api_key)
+        if url.startswith("local://"):
+            # Embedded mode — Qdrant runs in-process, no server needed.
+            # Data is persisted to the given directory path.
+            path = url[len("local://"):]
+            self._client = QdrantClient(path=path)
+            logger.info("Qdrant running in embedded mode (path=%s)", path)
+        else:
+            # Remote mode — connect to Qdrant Cloud or a local server.
+            self._client = QdrantClient(url=url, api_key=api_key, prefer_grpc=False, timeout=60)
+            logger.info("Qdrant client initialised with url=%s", url)
 
     # ── Client Setup ──────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _build_client(
-        host: str, port: int, api_key: Optional[str]
-    ) -> QdrantClient:
-        # Explicitly build an HTTP URL and force prefer_grpc=False to ensure REST API is used everywhere
-        url = host if host.startswith("http") else f"http://{host}:{port}"
-        return QdrantClient(url=url, api_key=api_key, prefer_grpc=False, timeout=30)
 
     # ── Collection Management ─────────────────────────────────────────────────
 

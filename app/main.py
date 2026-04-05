@@ -49,11 +49,23 @@ def _load_settings() -> dict:
     from pathlib import Path
     from dotenv import load_dotenv
 
-    load_dotenv(Path(__file__).parents[1] / ".env", override=False)
+    load_dotenv(Path(__file__).parents[1] / ".env", override=True)
+
+    qdrant_host = os.getenv("QDRANT_HOST", "local")
+    qdrant_port = os.getenv("QDRANT_PORT", "6333")
+
+    if qdrant_host in ("", "local", "embedded"):
+        # Embedded mode — Qdrant runs in-process, no server required
+        qdrant_url = "local://qdrant_storage"
+    elif qdrant_host.startswith("http://") or qdrant_host.startswith("https://"):
+        import re
+        clean = re.sub(r":\d+$", "", qdrant_host.rstrip("/"))
+        qdrant_url = f"{clean}:{qdrant_port}"
+    else:
+        qdrant_url = f"http://{qdrant_host}:{qdrant_port}"
 
     return {
-        "qdrant_host":       os.getenv("QDRANT_HOST", "localhost"),
-        "qdrant_port":       int(os.getenv("QDRANT_PORT", "6333")),
+        "qdrant_url":        qdrant_url,
         "qdrant_api_key":    os.getenv("QDRANT_API_KEY") or None,
         "collection_name":   os.getenv("COLLECTION_NAME", "news_embeddings"),
         "model_name":        os.getenv("MODEL_NAME", "BAAI/bge-m3"),
@@ -87,14 +99,9 @@ async def lifespan(app: FastAPI):
     logger.info("Embedding model ready (dim=%d).", embedding_svc.embedding_dim)
 
     # 3. Qdrant
-    logger.info(
-        "Connecting to Qdrant at %s:%s …",
-        cfg["qdrant_host"],
-        cfg["qdrant_port"],
-    )
+    logger.info("Connecting to Qdrant at %s …", cfg["qdrant_url"])
     qdrant_svc = QdrantService(
-        host=cfg["qdrant_host"],
-        port=cfg["qdrant_port"],
+        url=cfg["qdrant_url"],
         api_key=cfg["qdrant_api_key"],
         collection_name=cfg["collection_name"],
     )
