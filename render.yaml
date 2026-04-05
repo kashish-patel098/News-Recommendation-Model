@@ -18,25 +18,25 @@ services:
   - type: web
     name: news-recommendation-api
     runtime: python
-    region: oregon      # choose: oregon, frankfurt, singapore, ohio
-    plan: free          # free = 512MB RAM, spins down after 15min inactivity
-                        # upgrade to 'starter' ($7/mo) to prevent spin-down
+    region: oregon
+    plan: free
 
     buildCommand: pip install --upgrade pip && pip install -r ./app/requirements.txt
 
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # PYTHONPATH=. is set inline so local_store module is always found
+    startCommand: PYTHONPATH=. uvicorn app.main:app --host 0.0.0.0 --port 10000
 
     # Render sets $PORT automatically — do NOT hardcode 8000 here
     healthCheckPath: /api/v1/health
 
     envVars:
-      # ── Qdrant Cloud (free cluster at cloud.qdrant.io) ─────────────────────
+      # ── Qdrant (embedded local mode — no cloud server needed) ──────────────
       - key: QDRANT_HOST
-        value: https://774effe6-08e2-4eef-b57c-3c444d57d168.eu-central-1-0.aws.cloud.qdrant.io
+        value: local
       - key: QDRANT_PORT
         value: "6333"
       - key: QDRANT_API_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6NDVkYjc4NDItYjhkZS00YTY4LTg5YTAtZDViYWI2Y2ZhYTBhIn0.4MG0NItjuxmP862YAz9mJbhSJodgNoY-_aTwodegzJ4     # from Qdrant Cloud dashboard
+        value: ""
 
       # ── Collection ──────────────────────────────────────────────────────────
       - key: COLLECTION_NAME
@@ -50,12 +50,10 @@ services:
         value: ranker_weights.pt
 
       # ── Storage ─────────────────────────────────────────────────────────────
-            # ── Storage ─────────────────────────────────────────────────────────────
       - key: DATABASE_URL
         fromDatabase:
           name: news-postgressDB
           property: connectionString
-
 
       # ── Performance ─────────────────────────────────────────────────────────
       - key: CACHE_MAX_SIZE
@@ -71,6 +69,6 @@ services:
       - key: TOKENIZERS_PARALLELISM
         value: "false"
 
-      # ── Python path ─────────────────────────────────────────────────────────
+      # ── Python path (also set inline in startCommand as backup) ─────────────
       - key: PYTHONPATH
         value: "."
