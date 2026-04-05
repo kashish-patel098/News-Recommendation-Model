@@ -68,7 +68,7 @@ class QdrantService:
         host: str = "localhost",
         port: int = 6333,
         api_key: Optional[str] = None,
-        collection_name: str = COLLECTION_NAME,
+        collection_name: str = "news_embeddings",
     ):
         self.collection_name = collection_name
         self._client = self._build_client(host, port, api_key)
@@ -79,10 +79,9 @@ class QdrantService:
     def _build_client(
         host: str, port: int, api_key: Optional[str]
     ) -> QdrantClient:
-        # Qdrant Cloud (https URL) or local Docker
-        if host.startswith("http"):
-            return QdrantClient(url=host, api_key=api_key, timeout=30)
-        return QdrantClient(host=host, port=port, timeout=30)
+        # Explicitly build an HTTP URL and force prefer_grpc=False to ensure REST API is used everywhere
+        url = host if host.startswith("http") else f"http://{host}:{port}"
+        return QdrantClient(url=url, api_key=api_key, prefer_grpc=False, timeout=30)
 
     # ── Collection Management ─────────────────────────────────────────────────
 

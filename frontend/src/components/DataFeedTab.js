@@ -117,7 +117,7 @@ export default function DataFeedTab() {
   const startPolling = (jobId) => {
     const timer = setInterval(async () => {
       try {
-        const res  = await fetch(`${API_BASE}/ingest/status/${jobId}`);
+        const res  = await fetch(`${API_BASE_V1}/ingest/status/${jobId}`);
         const data = await res.json();
         setJob(data);
         if (data.status === 'done' || data.status === 'error') {
@@ -142,7 +142,7 @@ export default function DataFeedTab() {
     formData.append('file', file);
 
     try {
-      const res  = await fetch(`${API_BASE}/ingest/csv`, {
+      const res  = await fetch(`${API_BASE_V1}/ingest/csv`, {
         method: 'POST',
         body: formData,
       });
