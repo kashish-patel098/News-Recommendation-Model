@@ -19,7 +19,16 @@ Shutdown
 
 import logging
 import sys
+import os
+from pathlib import Path
 from contextlib import asynccontextmanager
+
+# Ensure the project root is on sys.path so 'local_store' is importable
+# regardless of how PYTHONPATH is configured (especially on Render)
+_project_root = str(Path(__file__).parents[1])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
