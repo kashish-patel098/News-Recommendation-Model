@@ -58,7 +58,7 @@ def _load_settings() -> dict:
         "collection_name":   os.getenv("COLLECTION_NAME", "news_embeddings"),
         "model_name":        os.getenv("MODEL_NAME", "BAAI/bge-m3"),
         "ranker_weights":    os.getenv("RANKER_WEIGHTS_PATH", "ranker_weights.pt"),
-        "sqlite_db_path":    os.getenv("SQLITE_DB_PATH", "local_store/news.db"),
+        "database_url":      os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/newsdb"),
         "cache_max_size":    int(os.getenv("CACHE_MAX_SIZE", "1000")),
     }
 
@@ -72,10 +72,10 @@ async def lifespan(app: FastAPI):
     logger.info("=== News Recommendation Engine starting up ===")
 
     # 1. Local full-article store
-    logger.info("Initialising SQLite store at '%s' …", cfg["sqlite_db_path"])
-    news_store = NewsStore(db_path=cfg["sqlite_db_path"])
+    logger.info("Initialising PostgreSQL store …")
+    news_store = NewsStore(db_url=cfg["database_url"])
     app.state.news_store = news_store
-    logger.info("SQLite store ready (%d articles).", news_store.count())
+    logger.info("PostgreSQL store ready (%d articles).", news_store.count())
 
     # 2. Embedding model (slow — log clearly)
     logger.info("Loading embedding model '%s' … (this may take a minute)", cfg["model_name"])
