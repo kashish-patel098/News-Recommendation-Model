@@ -42,8 +42,8 @@ from qdrant_client.models import (
 
 logger = logging.getLogger(__name__)
 
-VECTOR_SIZE = 1024
-COLLECTION_NAME = "news_embeddings"
+# Default — overridden at runtime from EmbeddingService.embedding_dim
+_DEFAULT_VECTOR_SIZE = 1024
 
 
 def _article_id_to_point_id(article_id: str) -> int:
@@ -86,7 +86,7 @@ class QdrantService:
 
     # ── Collection Management ─────────────────────────────────────────────────
 
-    def ensure_collection(self) -> None:
+    def ensure_collection(self, vector_size: int = _DEFAULT_VECTOR_SIZE) -> None:
         """Create collection if it doesn't already exist."""
         existing = [c.name for c in self._client.get_collections().collections]
         if self.collection_name in existing:
@@ -99,11 +99,11 @@ class QdrantService:
         self._client.create_collection(
             collection_name=self.collection_name,
             vectors_config=VectorParams(
-                size=VECTOR_SIZE,
+                size=vector_size,
                 distance=Distance.COSINE,
             ),
         )
-        logger.info("Collection '%s' created (dim=%d, cosine).", self.collection_name, VECTOR_SIZE)
+        logger.info("Collection '%s' created (dim=%d, cosine).", self.collection_name, vector_size)
 
     def collection_info(self) -> Dict[str, Any]:
         info = self._client.get_collection(self.collection_name)

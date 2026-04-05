@@ -91,7 +91,8 @@ class EmbeddingService:
 
     @property
     def embedding_dim(self) -> int:
-        return 1024  # BGE-m3 hidden size
+        """Read vector size directly from the loaded model — works for any HuggingFace model."""
+        return EmbeddingService._model.config.hidden_size
 
     # -- Cache helpers ---------------------------------------------------------
 

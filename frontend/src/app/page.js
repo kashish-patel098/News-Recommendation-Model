@@ -14,10 +14,11 @@ export default function Home() {
   const handleFetchRecommendations = async (payload, type) => {
     setLoading(true);
     setRecommendations([]);
+    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     try {
-      const endpoint = type === 'portfolio' 
-        ? 'http://localhost:8000/api/v1/recommend/portfolio' 
-        : 'http://localhost:8000/api/v1/recommend';
+      const endpoint = type === 'portfolio'
+        ? `${API}/api/v1/recommend/portfolio`
+        : `${API}/api/v1/recommend`;
         
       const res = await fetch(endpoint, {
         method: 'POST',

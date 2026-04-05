@@ -1,0 +1,66 @@
+# render.yaml
+# One-click deployment configuration for Render.com
+# Docs: https://render.com/docs/yaml-spec
+#
+# This deploys the FastAPI backend as a Web Service.
+# The frontend is deployed separately on Vercel (it's just a Next.js app).
+#
+# Free tier uses BAAI/bge-small-en-v1.5 (384-dim, ~150MB RAM).
+# Upgrade MODEL_NAME to BAAI/bge-m3 if you move to a paid plan (2GB+ RAM).
+
+services:
+  - type: web
+    name: news-recommendation-api
+    runtime: python
+    region: oregon      # choose: oregon, frankfurt, singapore, ohio
+    plan: free          # free = 512MB RAM, spins down after 15min inactivity
+                        # upgrade to 'starter' ($7/mo) to prevent spin-down
+
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    # Render sets $PORT automatically — do NOT hardcode 8000 here
+    healthCheckPath: /api/v1/health
+
+    envVars:
+      # ── Qdrant Cloud (free cluster at cloud.qdrant.io) ─────────────────────
+      - key: QDRANT_HOST
+        value: YOUR_QDRANT_CLOUD_URL   # e.g. xyz.us-east-1-0.aws.cloud.qdrant.io
+      - key: QDRANT_PORT
+        value: "6333"
+      - key: QDRANT_API_KEY
+        value: YOUR_QDRANT_API_KEY     # from Qdrant Cloud dashboard
+
+      # ── Collection ──────────────────────────────────────────────────────────
+      - key: COLLECTION_NAME
+        value: news_embeddings
+
+      # ── Model ───────────────────────────────────────────────────────────────
+      # Free tier (512MB RAM): use bge-small-en-v1.5 (384-dim, ~150MB RAM)
+      - key: MODEL_NAME
+        value: BAAI/bge-small-en-v1.5
+      - key: RANKER_WEIGHTS_PATH
+        value: ranker_weights.pt
+
+      # ── Storage ─────────────────────────────────────────────────────────────
+      - key: SQLITE_DB_PATH
+        value: local_store/news.db
+
+      # ── Performance ─────────────────────────────────────────────────────────
+      - key: CACHE_MAX_SIZE
+        value: "200"
+      - key: INGEST_BATCH_SIZE
+        value: "8"
+
+      # ── Suppress TF/Keras ───────────────────────────────────────────────────
+      - key: TRANSFORMERS_NO_TF
+        value: "1"
+      - key: TF_CPP_MIN_LOG_LEVEL
+        value: "3"
+      - key: TOKENIZERS_PARALLELISM
+        value: "false"
+
+      # ── Python path ─────────────────────────────────────────────────────────
+      - key: PYTHONPATH
+        value: "."

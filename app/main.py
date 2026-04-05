@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
         api_key=cfg["qdrant_api_key"],
         collection_name=cfg["collection_name"],
     )
-    qdrant_svc.ensure_collection()
+    qdrant_svc.ensure_collection(vector_size=embedding_svc.embedding_dim)
     app.state.qdrant_service = qdrant_svc
     info = qdrant_svc.collection_info()
     logger.info("Qdrant ready — collection '%s' has %s points.", cfg["collection_name"], info.get("points_count"))
