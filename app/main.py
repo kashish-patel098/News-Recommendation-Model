@@ -1,0 +1,153 @@
+"""
+app/main.py
+────────────
+FastAPI application entrypoint.
+
+Startup sequence (lifespan)
+───────────────────────────
+  1. Load settings from .env
+  2. Initialise NewsStore (SQLite — local full-article store)
+  3. Load BGE-m3 embedding model (heavy — runs once at startup)
+  4. Connect Qdrant client and ensure collection exists
+  5. Load PyTorch NewsRanker
+  6. Attach everything to app.state for dependency injection
+
+Shutdown
+────────
+  No explicit teardown needed for SQLite / Qdrant.  The GC handles it.
+"""
+
+import logging
+import sys
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.routes import router
+from app.api.ingest_routes import ingest_router
+from app.services.embedding_service import EmbeddingService
+from app.services.qdrant_service import QdrantService
+from app.services.ranking_service import RankingService
+from local_store.news_store import NewsStore
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
+
+
+# ── Settings (from .env) ──────────────────────────────────────────────────────
+
+def _load_settings() -> dict:
+    """Load configuration from .env without pydantic-settings dependency at module level."""
+    import os
+    from pathlib import Path
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).parents[1] / ".env", override=False)
+
+    return {
+        "qdrant_host":       os.getenv("QDRANT_HOST", "localhost"),
+        "qdrant_port":       int(os.getenv("QDRANT_PORT", "6333")),
+        "qdrant_api_key":    os.getenv("QDRANT_API_KEY") or None,
+        "collection_name":   os.getenv("COLLECTION_NAME", "news_embeddings"),
+        "model_name":        os.getenv("MODEL_NAME", "BAAI/bge-m3"),
+        "ranker_weights":    os.getenv("RANKER_WEIGHTS_PATH", "ranker_weights.pt"),
+        "sqlite_db_path":    os.getenv("SQLITE_DB_PATH", "local_store/news.db"),
+        "cache_max_size":    int(os.getenv("CACHE_MAX_SIZE", "1000")),
+    }
+
+
+# ── Lifespan ──────────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown logic."""
+    cfg = _load_settings()
+    logger.info("=== News Recommendation Engine starting up ===")
+
+    # 1. Local full-article store
+    logger.info("Initialising SQLite store at '%s' …", cfg["sqlite_db_path"])
+    news_store = NewsStore(db_path=cfg["sqlite_db_path"])
+    app.state.news_store = news_store
+    logger.info("SQLite store ready (%d articles).", news_store.count())
+
+    # 2. Embedding model (slow — log clearly)
+    logger.info("Loading embedding model '%s' … (this may take a minute)", cfg["model_name"])
+    embedding_svc = EmbeddingService(
+        model_name=cfg["model_name"],
+        cache_max_size=cfg["cache_max_size"],
+    )
+    app.state.embedding_service = embedding_svc
+    logger.info("Embedding model ready (dim=%d).", embedding_svc.embedding_dim)
+
+    # 3. Qdrant
+    logger.info(
+        "Connecting to Qdrant at %s:%s …",
+        cfg["qdrant_host"],
+        cfg["qdrant_port"],
+    )
+    qdrant_svc = QdrantService(
+        host=cfg["qdrant_host"],
+        port=cfg["qdrant_port"],
+        api_key=cfg["qdrant_api_key"],
+        collection_name=cfg["collection_name"],
+    )
+    qdrant_svc.ensure_collection()
+    app.state.qdrant_service = qdrant_svc
+    info = qdrant_svc.collection_info()
+    logger.info("Qdrant ready — collection '%s' has %s points.", cfg["collection_name"], info.get("points_count"))
+
+    # 4. Neural re-ranker
+    logger.info("Loading neural re-ranker …")
+    ranking_svc = RankingService(
+        weights_path=cfg["ranker_weights"],
+        embedding_dim=embedding_svc.embedding_dim,
+    )
+    app.state.ranking_service = ranking_svc
+
+    logger.info("=== All services ready. API is live. ===")
+    yield
+    logger.info("=== Shutting down. ===")
+
+
+# ── Application ───────────────────────────────────────────────────────────────
+
+app = FastAPI(
+    title="News Recommendation Engine",
+    description=(
+        "Real-time personalised news recommendations powered by BGE-m3 "
+        "embeddings, Qdrant vector search, and a PyTorch neural re-ranker."
+    ),
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan,
+)
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # Restrict in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Router ────────────────────────────────────────────────────────────────────
+
+app.include_router(router,        prefix="/api/v1")
+app.include_router(ingest_router, prefix="/api/v1")
+
+
+# ── Root Redirect ─────────────────────────────────────────────────────────────
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return {"message": "News Recommendation Engine", "docs": "/docs"}

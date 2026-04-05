@@ -1,0 +1,27 @@
+# -- Web Framework -------------------------------------------------------------
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+
+# -- Vector Database -----------------------------------------------------------
+qdrant-client>=1.9.0
+
+# -- Embeddings (BGE-m3 via plain HuggingFace transformers + torch) -----------
+# No sentence-transformers, no FlagEmbedding — just the two core libs.
+# TRANSFORMERS_NO_TF=1 env var prevents any TensorFlow/Keras imports.
+transformers>=4.36.0
+torch>=2.2.0
+
+# -- Data Processing -----------------------------------------------------------
+numpy>=1.26.0
+pandas>=2.2.0
+
+# -- Validation & Config -------------------------------------------------------
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+
+# -- Caching -------------------------------------------------------------------
+cachetools>=5.3.0
+
+# -- Progress Bar (for ingestion scripts) -------------------------------------
+tqdm>=4.66.0
