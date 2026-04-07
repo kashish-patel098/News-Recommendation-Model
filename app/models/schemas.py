@@ -115,6 +115,7 @@ class RecommendResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
-    qdrant_connected: bool
-    sqlite_articles: int
-    embedding_model: str
+    loading: bool = False
+    qdrant_connected: Optional[bool] = None
+    sqlite_articles: Optional[int] = None
+    embedding_model: Optional[str] = None

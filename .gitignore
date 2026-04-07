@@ -4,7 +4,6 @@ qdrant_storage/
 .venv/
 scripts/
 news_dataset.csv
-ranker_weights.pt
 setup_venv.ps1
 .env
 frontend/.next/

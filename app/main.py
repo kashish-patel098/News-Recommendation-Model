@@ -17,6 +17,7 @@ Shutdown
   No explicit teardown needed for SQLite / Qdrant.  The GC handles it.
 """
 
+import asyncio
 import logging
 import sys
 import os
@@ -86,48 +87,77 @@ def _load_settings() -> dict:
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
+async def _load_services(app: FastAPI, cfg: dict) -> None:
+    """
+    Load all heavy services in the background so that uvicorn can bind to
+    $PORT immediately.  Render's health-check and deploy timeout will not
+    fire before the server is actually listening.
+    """
+    try:
+        # 1. PostgreSQL store
+        logger.info("Initialising PostgreSQL store …")
+        news_store = NewsStore(db_url=cfg["database_url"])
+        app.state.news_store = news_store
+        logger.info("PostgreSQL store ready (%d articles).", news_store.count())
+
+        # 2. Embedding model (slow — runs in a thread so the event loop stays free)
+        logger.info("Loading embedding model '%s' … (this may take a minute)", cfg["model_name"])
+        loop = asyncio.get_event_loop()
+        embedding_svc = await loop.run_in_executor(
+            None,
+            lambda: EmbeddingService(
+                model_name=cfg["model_name"],
+                cache_max_size=cfg["cache_max_size"],
+            ),
+        )
+        app.state.embedding_service = embedding_svc
+        logger.info("Embedding model ready (dim=%d).", embedding_svc.embedding_dim)
+
+        # 3. Qdrant
+        logger.info("Connecting to Qdrant at %s …", cfg["qdrant_url"])
+        qdrant_svc = QdrantService(
+            url=cfg["qdrant_url"],
+            api_key=cfg["qdrant_api_key"],
+            collection_name=cfg["collection_name"],
+        )
+        qdrant_svc.ensure_collection(vector_size=embedding_svc.embedding_dim)
+        app.state.qdrant_service = qdrant_svc
+        info = qdrant_svc.collection_info()
+        logger.info("Qdrant ready — collection '%s' has %s points.", cfg["collection_name"], info.get("points_count"))
+
+        # 4. Neural re-ranker
+        logger.info("Loading neural re-ranker …")
+        ranking_svc = RankingService(
+            weights_path=cfg["ranker_weights"],
+            embedding_dim=embedding_svc.embedding_dim,
+        )
+        app.state.ranking_service = ranking_svc
+
+        app.state.startup_complete = True
+        logger.info("=== All services ready. API is live. ===")
+
+    except Exception:  # noqa: BLE001
+        logger.exception("FATAL: service initialisation failed — app will stay in 'loading' state")
+        app.state.startup_error = True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown logic."""
+    """Bind port immediately, then load heavy services in the background."""
     cfg = _load_settings()
     logger.info("=== News Recommendation Engine starting up ===")
 
-    # 1. Local full-article store
-    logger.info("Initialising PostgreSQL store …")
-    news_store = NewsStore(db_url=cfg["database_url"])
-    app.state.news_store = news_store
-    logger.info("PostgreSQL store ready (%d articles).", news_store.count())
+    # Pre-set state flags so health-check doesn't crash with AttributeError
+    app.state.startup_complete = False
+    app.state.startup_error = False
+    app.state.news_store = None
+    app.state.embedding_service = None
+    app.state.qdrant_service = None
+    app.state.ranking_service = None
 
-    # 2. Embedding model (slow — log clearly)
-    logger.info("Loading embedding model '%s' … (this may take a minute)", cfg["model_name"])
-    embedding_svc = EmbeddingService(
-        model_name=cfg["model_name"],
-        cache_max_size=cfg["cache_max_size"],
-    )
-    app.state.embedding_service = embedding_svc
-    logger.info("Embedding model ready (dim=%d).", embedding_svc.embedding_dim)
+    # Fire-and-forget: uvicorn will bind to $PORT before this finishes
+    asyncio.create_task(_load_services(app, cfg))
 
-    # 3. Qdrant
-    logger.info("Connecting to Qdrant at %s …", cfg["qdrant_url"])
-    qdrant_svc = QdrantService(
-        url=cfg["qdrant_url"],
-        api_key=cfg["qdrant_api_key"],
-        collection_name=cfg["collection_name"],
-    )
-    qdrant_svc.ensure_collection(vector_size=embedding_svc.embedding_dim)
-    app.state.qdrant_service = qdrant_svc
-    info = qdrant_svc.collection_info()
-    logger.info("Qdrant ready — collection '%s' has %s points.", cfg["collection_name"], info.get("points_count"))
-
-    # 4. Neural re-ranker
-    logger.info("Loading neural re-ranker …")
-    ranking_svc = RankingService(
-        weights_path=cfg["ranker_weights"],
-        embedding_dim=embedding_svc.embedding_dim,
-    )
-    app.state.ranking_service = ranking_svc
-
-    logger.info("=== All services ready. API is live. ===")
     yield
     logger.info("=== Shutting down. ===")
 

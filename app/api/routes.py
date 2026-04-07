@@ -228,13 +228,28 @@ async def recommend_from_portfolio(
     response_model=HealthResponse,
     summary="Health / readiness check",
 )
-async def health(
-    embedding_svc=Depends(get_embedding_service),
-    qdrant_svc=Depends(get_qdrant_service),
-    news_store=Depends(get_news_store),
-) -> HealthResponse:
+async def health(request: Request) -> HealthResponse:
+    # During background warmup, services may not be ready yet
+    if not getattr(request.app.state, "startup_complete", False):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "loading",
+                "loading": True,
+                "qdrant_connected": None,
+                "sqlite_articles": None,
+                "embedding_model": None,
+            },
+        )
+
+    embedding_svc = request.app.state.embedding_service
+    qdrant_svc = request.app.state.qdrant_service
+    news_store = request.app.state.news_store
+
     return HealthResponse(
         status="ok",
+        loading=False,
         qdrant_connected=qdrant_svc.is_healthy(),
         sqlite_articles=news_store.count(),
         embedding_model=embedding_svc.model_name,
