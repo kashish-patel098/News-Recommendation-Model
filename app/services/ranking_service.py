@@ -58,17 +58,30 @@ class RankingService:
         model = NewsRanker(embedding_dim=self.embedding_dim).to(self.device)
 
         if self.weights_path.exists():
-            state = torch.load(
-                str(self.weights_path),
-                map_location=self.device,
-                weights_only=True,
-            )
-            model.load_state_dict(state)
-            logger.info("Loaded ranker weights from %s", self.weights_path)
+            try:
+                state = torch.load(
+                    str(self.weights_path),
+                    map_location=self.device,
+                    weights_only=True,
+                )
+                model.load_state_dict(state)
+                logger.info("Loaded ranker weights from %s", self.weights_path)
+            except RuntimeError as exc:
+                # Weights were trained with a different embedding model/dimension.
+                # Fall back to random init — model still works, just not yet trained
+                # for this embedding space. Run monthly_train.py --all-data to retrain.
+                logger.warning(
+                    "Ranker weights at '%s' are incompatible with embedding_dim=%d "
+                    "(likely trained with a different model). Starting with random init. "
+                    "Run: python scripts/monthly_train.py --all-data\n  Detail: %s",
+                    self.weights_path,
+                    self.embedding_dim,
+                    exc,
+                )
         else:
             logger.warning(
                 "No ranker weights found at '%s'. Using random init. "
-                "Run scripts/train_ranker.py to pre-train.",
+                "Run scripts/monthly_train.py --all-data to train.",
                 self.weights_path,
             )
 
