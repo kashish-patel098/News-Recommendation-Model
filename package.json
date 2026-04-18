@@ -14,8 +14,8 @@
     "logs":        "pm2 logs news-rec-api",
     "dev":         "bash start.sh --dev",
 
-    "train":       "venv/bin/python scripts/monthly_train.py",
-    "train:all":   "venv/bin/python scripts/monthly_train.py --all-data"
+    "train":       "./venv/bin/python scripts/monthly_train.py",
+    "train:all":   "./venv/bin/python scripts/monthly_train.py --all-data"
   },
   "dependencies": {
     "dotenv": "^16.4.0"
