@@ -45,7 +45,24 @@ from app.utils.text_utils import truncate_tokens
 logger = logging.getLogger(__name__)
 
 # Target dimension for named vectors in Qdrant
-VECTOR_SIZE: int = int(os.getenv("VECTOR_SIZE", "386"))
+VECTOR_SIZE: int = int(os.getenv("VECTOR_SIZE", "384"))
+
+# ── Xenova alias map ──────────────────────────────────────────────────────────
+# Xenova/* models are ONNX conversions for JavaScript (@xenova/transformers).
+# Python's `transformers` library cannot load them directly.
+# This map translates Xenova model IDs to their identical PyTorch counterparts
+# so users can keep MODEL_NAME=Xenova/... in their .env without errors.
+_XENOVA_ALIASES: dict = {
+    "Xenova/all-MiniLM-L6-v2":       "sentence-transformers/all-MiniLM-L6-v2",
+    "Xenova/all-MiniLM-L12-v2":      "sentence-transformers/all-MiniLM-L12-v2",
+    "Xenova/all-mpnet-base-v2":      "sentence-transformers/all-mpnet-base-v2",
+    "Xenova/bge-small-en-v1.5":      "BAAI/bge-small-en-v1.5",
+    "Xenova/bge-base-en-v1.5":       "BAAI/bge-base-en-v1.5",
+    "Xenova/bge-large-en-v1.5":      "BAAI/bge-large-en-v1.5",
+    "Xenova/multilingual-e5-small":  "intfloat/multilingual-e5-small",
+    "Xenova/multilingual-e5-base":   "intfloat/multilingual-e5-base",
+    "Xenova/multilingual-e5-large":  "intfloat/multilingual-e5-large",
+}
 
 
 class _LinearProjection(nn.Module):
@@ -79,11 +96,19 @@ class EmbeddingService:
 
     def __init__(
         self,
-        model_name: str = "BAAI/bge-m3",
+        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
         cache_max_size: int = 1000,
         vector_size: int = VECTOR_SIZE,
     ):
-        self.model_name = model_name
+        # Resolve Xenova JS alias → Python HuggingFace model ID
+        resolved = _XENOVA_ALIASES.get(model_name, model_name)
+        if resolved != model_name:
+            logger.info(
+                "Xenova alias resolved: '%s' → '%s'",
+                model_name, resolved,
+            )
+        self.model_name = resolved         # store the resolved name
+        self._original_model_name = model_name  # for display / .env
         self.vector_size = vector_size
         self._cache: LRUCache = LRUCache(maxsize=cache_max_size)
         self._cache_lock = threading.Lock()
