@@ -6,8 +6,5 @@ news_dataset.csv
 setup_venv.ps1
 .env
 frontend/.next/
-setup_ec2.sh
-stop.sh
-start.sh
 frontend/
 ranker_weights.pt
