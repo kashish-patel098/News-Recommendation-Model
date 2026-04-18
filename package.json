@@ -3,32 +3,22 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "News Recommendation Engine — API + vector orchestrator (EC2)",
+  "description": "News Recommendation API — reads from existing Qdrant",
   "scripts": {
-    "dev":          "bash start.sh --dev",
-    "start":        "bash start.sh",
-    "stop":         "bash stop.sh",
+    "start":       "pm2 start ecosystem.config.cjs",
+    "stop":        "pm2 stop news-rec-api",
+    "restart":     "pm2 restart news-rec-api",
+    "reload":      "pm2 reload news-rec-api",
+    "delete":      "pm2 delete news-rec-api",
+    "status":      "pm2 status",
+    "logs":        "pm2 logs news-rec-api",
+    "dev":         "bash start.sh --dev",
 
-    "vector":       "node index.js",
-    "vector:once":  "node index.js --once",
-    "vector:watch": "node --watch index.js",
-
-    "api":          "venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
-    "api:prod":     "venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1",
-
-    "train":        "venv/bin/python scripts/monthly_train.py",
-    "train:all":    "venv/bin/python scripts/monthly_train.py --all-data",
-
-    "logs:api":     "tail -f /var/log/news-rec/api.log",
-    "logs:vector":  "tail -f /var/log/news-rec/vector.log"
+    "train":       "venv/bin/python scripts/monthly_train.py",
+    "train:all":   "venv/bin/python scripts/monthly_train.py --all-data"
   },
   "dependencies": {
-    "@aws-sdk/client-s3":     "^3.600.0",
-    "@qdrant/js-client-rest": "^1.9.0",
-    "dotenv":                 "^16.4.0"
-  },
-  "devDependencies": {
-    "@xenova/transformers": "^2.17.0"
+    "dotenv": "^16.4.0"
   },
   "engines": {
     "node": ">=20.0.0"
