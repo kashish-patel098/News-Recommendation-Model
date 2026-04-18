@@ -1,0 +1,93 @@
+version: "3.9"
+
+# ─── News Recommendation Engine — EC2 docker-compose ─────────────────────────
+#
+# Services:
+#   api      — FastAPI backend (port 8000)
+#   ingest   — One-shot Athena ingestion (runs and exits)
+#   train    — One-shot monthly training (runs and exits)
+#
+# Usage on EC2:
+#   # 1. Copy .env.ec2.example → .env and fill in your secrets
+#   cp .env.ec2.example .env && nano .env
+#
+#   # 2. Start the API
+#   docker-compose up -d api
+#
+#   # 3. Run ingestion manually (or let cron call it)
+#   docker-compose run --rm ingest
+#
+#   # 4. Run monthly training manually (or let cron call it)
+#   docker-compose run --rm train
+#
+# Cron (on EC2 host — crontab -e):
+#   # Ingest new articles daily at 01:00
+#   0 1 * * * cd /opt/news-rec && docker-compose run --rm ingest >> /var/log/news-rec/ingest.log 2>&1
+#
+#   # Train monthly on the 1st at 03:00
+#   0 3 1 * * cd /opt/news-rec && docker-compose run --rm train >> /var/log/news-rec/train.log 2>&1
+
+services:
+
+  # ── FastAPI backend ──────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: news-rec:latest
+    container_name: news-rec-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist the HuggingFace model cache across restarts
+      - hf_cache:/root/.cache/huggingface
+      # Persist the ranker weights and local store watermarks
+      - ./local_store:/app/local_store
+      - ./ranker_weights.pt:/app/ranker_weights.pt
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    command: >
+      python -m uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 1
+
+  # ── Athena ingestion (run on-demand or via cron) ─────────────────────────────
+  ingest:
+    image: news-rec:latest
+    container_name: news-rec-ingest
+    env_file: .env
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - ./local_store:/app/local_store
+    command: >
+      python scripts/ingest_from_athena.py
+    profiles:
+      - tools   # only start with: docker-compose --profile tools up ingest
+
+  # ── Monthly incremental training ──────────────────────────────────────────────
+  train:
+    image: news-rec:latest
+    container_name: news-rec-train
+    env_file: .env
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - ./local_store:/app/local_store
+      - ./ranker_weights.pt:/app/ranker_weights.pt
+    command: >
+      python scripts/monthly_train.py
+      --pairs 5000
+      --epochs 3
+      --embed-batch 8
+    profiles:
+      - tools
+
+volumes:
+  hf_cache:
+    driver: local

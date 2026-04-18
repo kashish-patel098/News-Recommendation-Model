@@ -275,3 +275,39 @@ async def get_article(
             detail=f"Article '{article_id}' not found in local store.",
         )
     return article
+
+
+# -- Embed endpoint (used by ec2_vector.js JS service) -------------------------
+
+from pydantic import BaseModel
+
+class EmbedRequest(BaseModel):
+    text: str
+
+@router.post(
+    "/embed",
+    summary="Embed a text string → 386-dim vector",
+    description=(
+        "Reuses the already-loaded BGE-m3 model to produce a single embedding. "
+        "Called by the Node.js ec2_vector.js pipeline so the model is not "
+        "loaded twice on the same machine."
+    ),
+)
+async def embed_text(
+    body: EmbedRequest,
+    embedding_svc=Depends(get_embedding_service),
+) -> dict:
+    if not getattr(embedding_svc, "model_name", None):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Embedding model not yet loaded — retry in a moment.",
+        )
+    try:
+        vector = embedding_svc.encode(body.text)
+        return {"vector": vector.tolist(), "dim": len(vector)}
+    except Exception as exc:
+        logger.exception("Embed endpoint error")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
