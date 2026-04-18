@@ -15,9 +15,9 @@ torch>=2.2.0
 numpy>=1.26.0
 pandas>=2.2.0
 
-# -- Database ------------------------------------------------------------------
-psycopg2-binary>=2.9.9
-sqlalchemy>=2.0.0
+# -- Database -----------------------------------------------------------------
+# PostgreSQL removed — article data lives in Iceberg (Athena/S3).
+# pyathena is used for all Iceberg queries.
 
 # -- AWS (Athena + Iceberg ingestion, S3 access) --------------------------------
 boto3>=1.34.0

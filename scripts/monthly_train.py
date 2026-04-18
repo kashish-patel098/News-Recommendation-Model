@@ -49,7 +49,7 @@ from tqdm import tqdm
 from app.models.nn_ranker import NewsRanker
 from app.services.embedding_service import EmbeddingService
 from app.utils.text_utils import build_news_embedding_text, parse_tags
-from local_store.news_store import NewsStore
+from scripts.athena_client import AthenaClient
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -61,11 +61,10 @@ logger = logging.getLogger("monthly_train")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 MODEL_NAME    = os.getenv("MODEL_NAME",          "BAAI/bge-m3")
-DATABASE_URL  = os.getenv("DATABASE_URL",        "postgresql://postgres:postgres@localhost:5432/newsdb")
 WEIGHTS_PATH  = Path(os.getenv("RANKER_WEIGHTS_PATH", str(ROOT / "ranker_weights.pt")))
 VECTOR_SIZE   = int(os.getenv("VECTOR_SIZE",    "386"))
 
-# Watermark file: stores the PostgreSQL row count at last training
+# Watermark: tracks how many articles were seen at last training run
 TRAIN_WATERMARK_FILE = ROOT / "local_store" / "train_watermark.txt"
 
 
@@ -201,50 +200,28 @@ def train(
     logger.info("  Device : %s", device)
     logger.info("=" * 60)
 
-    # ── Load articles from PostgreSQL ──────────────────────────────────────────
-    news_store   = NewsStore(db_url=DATABASE_URL)
-    total_in_db  = news_store.count()
+    # ── Fetch articles from Athena/Iceberg ──────────────────────────────────────
+    logger.info("Connecting to Athena/Iceberg …")
+    athena = AthenaClient()
+
     prev_watermark = _load_train_watermark() if not use_all_data else 0
 
+    if use_all_data:
+        logger.info("Fetching ALL articles from Iceberg …")
+        df = athena.fetch_all_articles()
+    else:
+        logger.info("Fetching articles newer than watermark ts=%d …", prev_watermark)
+        df = athena.fetch_new_articles(since_unix_ms=prev_watermark)
+
+    total_in_db = len(df)
+    logger.info("Iceberg returned %d articles for training.", total_in_db)
+
     if total_in_db == 0:
-        logger.error("No articles in PostgreSQL. Run ingest_from_athena.py first.")
-        sys.exit(1)
-
-    new_count = total_in_db - prev_watermark
-    logger.info(
-        "PostgreSQL: %d total articles | %d new since last training.",
-        total_in_db, new_count,
-    )
-
-    if new_count <= 0 and not use_all_data:
-        logger.info("No new articles to train on. Exiting.")
+        logger.info("No new articles in Iceberg since last training run. Exiting.")
         return
 
-    # Fetch new articles (offset by watermark)
-    # news_store.get_articles_after_offset(offset, limit) — implement if needed
-    # For simplicity, fall back to recent articles ordered by ingestion time.
-    conn = news_store._engine.connect() if hasattr(news_store, "_engine") else None
-
-    # Use SQLAlchemy text or psycopg2 to fetch new rows
-    import sqlalchemy
-    engine = sqlalchemy.create_engine(DATABASE_URL)
-    with engine.connect() as conn:
-        if use_all_data:
-            query = sqlalchemy.text(
-                "SELECT id, title, introductory_paragraph, tags FROM news "
-                "ORDER BY published_time_unix ASC"
-            )
-        else:
-            # Fetch the newest `new_count` rows (those added since last train)
-            query = sqlalchemy.text(
-                "SELECT id, title, introductory_paragraph, tags FROM news "
-                "ORDER BY published_time_unix DESC "
-                f"LIMIT {new_count}"
-            )
-        result   = conn.execute(query)
-        articles = [dict(row._mapping) for row in result]
-
-    logger.info("Fetched %d articles for training.", len(articles))
+    articles = df.to_dict(orient="records")
+    logger.info("Fetched %d articles from Iceberg for training.", len(articles))
 
     # Optionally cap to memory limit
     if max_articles and len(articles) > max_articles and not use_all_data:

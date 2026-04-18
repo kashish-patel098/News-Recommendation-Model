@@ -41,8 +41,8 @@ def get_qdrant_service(request: Request):
 def get_ranking_service(request: Request):
     return request.app.state.ranking_service
 
-def get_news_store(request: Request):
-    return request.app.state.news_store
+def get_iceberg_service(request: Request):
+    return request.app.state.iceberg_service
 
 
 # -- Shared pipeline helper ---------------------------------------------------
@@ -54,9 +54,9 @@ def _run_recommendation_pipeline(
     embedding_svc,
     qdrant_svc,
     ranking_svc,
-    news_store,
+    iceberg_svc,
 ) -> RecommendResponse:
-    """Common embed → search → rank pipeline used by both endpoints."""
+    """Common embed → search → rank → enrich pipeline."""
 
     # Step 1: Embed
     try:
@@ -83,7 +83,6 @@ def _run_recommendation_pipeline(
         ) from exc
 
     if not candidates:
-        logger.warning("No Qdrant candidates for user %s", user_id)
         return RecommendResponse(user_id=user_id, total=0, recommendations=[])
 
     # Step 3: Neural re-ranking
@@ -100,15 +99,15 @@ def _run_recommendation_pipeline(
             detail=f"Re-ranking error: {exc}",
         ) from exc
 
-    # Step 4: Attach full news
+    # Step 4: Attach full article content from Iceberg
     try:
-        if ranked_news:
+        if ranked_news and iceberg_svc:
             ids = [item.article_id for item in ranked_news]
-            full_articles_map = news_store.get_by_ids(ids)
+            full_articles_map = iceberg_svc.get_by_ids(ids)
             for item in ranked_news:
                 item.full_article = full_articles_map.get(item.article_id)
-    except Exception as exc:
-        logger.exception("Failed to attach full news for user %s, continuing without...", user_id)
+    except Exception:
+        logger.exception("Failed to attach Iceberg articles for user %s — continuing.", user_id)
 
     return RecommendResponse(
         user_id=user_id,
@@ -135,16 +134,14 @@ async def recommend(
     embedding_svc=Depends(get_embedding_service),
     qdrant_svc=Depends(get_qdrant_service),
     ranking_svc=Depends(get_ranking_service),
-    news_store=Depends(get_news_store),
+    iceberg_svc=Depends(get_iceberg_service),
 ) -> RecommendResponse:
     t0 = time.perf_counter()
-
     query_text = build_user_query_text(
         clicked_news=body.clicked_news,
         interests=body.interests,
         categories=body.categories,
     )
-
     result = _run_recommendation_pipeline(
         user_id=body.user_id,
         query_text=query_text,
@@ -152,13 +149,10 @@ async def recommend(
         embedding_svc=embedding_svc,
         qdrant_svc=qdrant_svc,
         ranking_svc=ranking_svc,
-        news_store=news_store,
+        iceberg_svc=iceberg_svc,
     )
-
-    logger.info(
-        "recommend | user=%s | ranked=%d | %.1f ms",
-        body.user_id, result.total, (time.perf_counter() - t0) * 1000,
-    )
+    logger.info("recommend | user=%s | ranked=%d | %.1f ms",
+        body.user_id, result.total, (time.perf_counter() - t0) * 1000)
     return result
 
 
@@ -180,16 +174,13 @@ async def recommend_from_portfolio(
     embedding_svc=Depends(get_embedding_service),
     qdrant_svc=Depends(get_qdrant_service),
     ranking_svc=Depends(get_ranking_service),
-    news_store=Depends(get_news_store),
+    iceberg_svc=Depends(get_iceberg_service),
 ) -> RecommendResponse:
     t0 = time.perf_counter()
-
-    # Build a rich query string from the portfolio JSON
     query_text = build_portfolio_query_text(
         portfolio=body.portfolio,
         extra_interests=body.interests,
     )
-
     if not query_text.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -199,13 +190,9 @@ async def recommend_from_portfolio(
                 "INVIT, DEPOSIT_V2, or INSURANCE_POLICIES is present."
             ),
         )
-
     portfolio_summary = summarise_portfolio(body.portfolio)
-    logger.info(
-        "recommend/portfolio | user=%s | sections=%s | query_len=%d",
-        body.user_id, list(portfolio_summary.keys()), len(query_text),
-    )
-
+    logger.info("recommend/portfolio | user=%s | sections=%s | query_len=%d",
+        body.user_id, list(portfolio_summary.keys()), len(query_text))
     result = _run_recommendation_pipeline(
         user_id=body.user_id,
         query_text=query_text,
@@ -213,13 +200,10 @@ async def recommend_from_portfolio(
         embedding_svc=embedding_svc,
         qdrant_svc=qdrant_svc,
         ranking_svc=ranking_svc,
-        news_store=news_store,
+        iceberg_svc=iceberg_svc,
     )
-
-    logger.info(
-        "recommend/portfolio | user=%s | ranked=%d | %.1f ms",
-        body.user_id, result.total, (time.perf_counter() - t0) * 1000,
-    )
+    logger.info("recommend/portfolio | user=%s | ranked=%d | %.1f ms",
+        body.user_id, result.total, (time.perf_counter() - t0) * 1000)
     return result
 
 
@@ -258,21 +242,18 @@ async def health(request: Request) -> HealthResponse:
 
 @router.get(
     "/article/{article_id}",
-    summary="Fetch full article from local SQLite store",
-    description=(
-        "Returns the complete article record including all paragraphs, "
-        "impact matrix, and image prompt. Fetched from SQLite, not Qdrant."
-    ),
+    summary="Fetch full article from Iceberg",
+    description="Returns the full article record from the Iceberg table via Athena.",
 )
 async def get_article(
     article_id: str,
-    news_store=Depends(get_news_store),
+    iceberg_svc=Depends(get_iceberg_service),
 ) -> dict:
-    article = news_store.get_by_id(article_id)
+    article = iceberg_svc.get_by_id(article_id)
     if article is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Article '{article_id}' not found in local store.",
+            detail=f"Article '{article_id}' not found in Iceberg.",
         )
     return article
 
