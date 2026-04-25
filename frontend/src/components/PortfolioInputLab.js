@@ -37,19 +37,32 @@ export default function PortfolioInputLab({ onSubmit, loading }) {
     '{\n  "EQUITIES": {\n    "EQUITIES0": {\n      "summary": {\n        "investment": {\n          "holdings": {\n            "holding": [\n              {"issuerName": "RELIANCE INDUSTRIES", "description": "Oil & Energy"}\n            ]\n          }\n        }\n      }\n    }\n  }\n}'
   );
   const [clickedNews, setClickedNews] = useState('');
+  const [useLatest, setUseLatest]   = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (activeTab === 'portfolio') {
       try {
         const parsed = JSON.parse(jsonInput);
-        onSubmit({ user_id: userId, portfolio: parsed, interests, categories: [] }, 'portfolio');
+        onSubmit({ 
+          user_id: userId, 
+          portfolio: parsed, 
+          interests, 
+          categories: [], 
+          use_latest: useLatest 
+        }, 'portfolio');
       } catch {
         alert('Invalid JSON in portfolio field.');
       }
     } else {
       if (!clickedNews.trim()) return alert('Please paste a news article.');
-      onSubmit({ user_id: userId, clicked_news: clickedNews, interests, categories: [] }, 'news');
+      onSubmit({ 
+        user_id: userId, 
+        clicked_news: clickedNews, 
+        interests, 
+        categories: [], 
+        use_latest: useLatest 
+      }, 'news');
     }
   };
 
@@ -159,13 +172,29 @@ export default function PortfolioInputLab({ onSubmit, loading }) {
               </div>
             )}
 
-            {/* Submit */}
-            <div style={{ marginTop: '2rem', textAlign: 'right' }}>
+            {/* Submit + Mode Toggle */}
+            <div style={{ marginTop: '2.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                <input 
+                  type="checkbox" 
+                  id="useLatest" 
+                  checked={useLatest}
+                  onChange={e => setUseLatest(e.target.checked)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#4ade80' }}
+                />
+                <label htmlFor="useLatest" style={{ fontSize: '0.88rem', color: '#fff', cursor: 'pointer', lineHeight: '1.4' }}>
+                  Prioritize <span style={{ color: '#4ade80', fontWeight: 700 }}>Recency</span><br/>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                    Personalize only the news from the <strong>latest hourly ingest</strong> (last 100 items).
+                  </span>
+                </label>
+              </div>
+
               <button
                 type="submit"
                 disabled={loading}
                 className="btn-primary"
-                style={{ minWidth: '190px' }}
+                style={{ minWidth: '220px' }}
               >
                 {loading
                   ? <><span className="spinner" style={{ width: '16px', height: '16px', marginRight: '8px', borderWidth: '2px' }} />Processing...</>

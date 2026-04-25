@@ -26,6 +26,10 @@ class RecommendRequest(BaseModel):
         default_factory=list,
         description="Preferred news categories, e.g. ['finance', 'tech']",
     )
+    use_latest: bool = Field(
+        default=False,
+        description="If True, re-ranks the most recent 100 articles instead of global search.",
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -65,6 +69,10 @@ class PortfolioRecommendRequest(BaseModel):
     categories: List[str] = Field(
         default_factory=list,
         description="Optional preferred news categories for Qdrant pre-filter",
+    )
+    use_latest: bool = Field(
+        default=False,
+        description="If True, re-ranks the most recent 100 articles instead of global search.",
     )
 
 

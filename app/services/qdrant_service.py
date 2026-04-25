@@ -86,7 +86,8 @@ class QdrantService:
             logger.info("Qdrant running in embedded mode (path=%s)", path)
         else:
             self._client = QdrantClient(
-                url=url, api_key=api_key, prefer_grpc=False, timeout=60
+                url=url, api_key=api_key, prefer_grpc=False, timeout=60,
+                check_compatibility=False,
             )
             logger.info("Qdrant client initialised (url=%s)", url)
 
@@ -308,3 +309,42 @@ class QdrantService:
             return len(result) > 0
         except UnexpectedResponse:
             return False
+    # ── Latest News ───────────────────────────────────────────────────────────
+    
+    def get_latest(self, limit: int = 50, with_vectors: bool = False) -> List[Any]:
+        """Fetch the most recently indexed news articles."""
+        from qdrant_client.models import OrderBy, Direction
+
+        try:
+            # Attempt to use the high-performance OrderBy API (Qdrant 1.10+)
+            response = self._client.query_points(
+                collection_name=self.collection_name,
+                query=None, # Match all points
+                limit=limit,
+                order_by=OrderBy(
+                    key="timestamp",
+                    direction=Direction.DESC
+                ),
+                with_payload=True,
+                with_vectors=with_vectors
+            )
+            return response.points
+        except Exception as exc:
+            logger.warning("Qdrant OrderBy failed (likely old version), falling back to scroll: %s", exc)
+            # Fallback: Scroll a larger chunk and sort in memory
+            # This is acceptable for "Latest News" which usually only needs ~50 items
+            points, _ = self._client.scroll(
+                collection_name=self.collection_name,
+                limit=min(limit * 2, 100),
+                with_payload=True,
+                with_vectors=with_vectors
+            )
+            
+            def get_ts(p):
+                ts = (p.payload or {}).get("timestamp")
+                if ts is None: return 0
+                try: return int(ts)
+                except: return 0
+
+            sorted_points = sorted(points, key=get_ts, reverse=True)
+            return sorted_points[:limit]

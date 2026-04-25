@@ -5,7 +5,7 @@
   "type": "module",
   "description": "News Recommendation API — reads from existing Qdrant",
   "scripts": {
-    "start":       "pm2 start ecosystem.config.cjs",
+    "start":       "bash start.sh --dev",
     "stop":        "pm2 stop news-rec-api",
     "restart":     "pm2 restart news-rec-api",
     "reload":      "pm2 reload news-rec-api",
@@ -14,8 +14,8 @@
     "logs":        "pm2 logs news-rec-api",
     "dev":         "bash start.sh --dev",
 
-    "train":       "./venv/bin/python3 scripts/monthly_train.py",
-    "train:all":   "./venv/bin/python3 scripts/monthly_train.py --all-data"
+    "train":       ".venv/bin/python3 scripts/monthly_train.py",
+    "train:all":   ".venv/bin/python3 scripts/monthly_train.py --all-data"
   },
   "dependencies": {
     "dotenv": "^16.4.0"

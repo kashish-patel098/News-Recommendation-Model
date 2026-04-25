@@ -127,6 +127,9 @@ class RankingService:
                 vec = np.zeros(self.embedding_dim, dtype=np.float32)
             elif isinstance(point.vector, list):
                 vec = np.array(point.vector, dtype=np.float32)
+            elif isinstance(point.vector, dict):
+                vec_val = next(iter(point.vector.values()))
+                vec = np.array(vec_val, dtype=np.float32)
             else:
                 vec = np.array(point.vector, dtype=np.float32)
             news_vecs.append(vec)
@@ -152,14 +155,28 @@ class RankingService:
             self.device,
         )
 
-        # ── Build NewsItem list ───────────────────────────────────────────────
+        # ── Debug: log first payload keys once to identify ID field name ─────
+        if candidates:
+            first_p = candidates[0].payload or {}
+            logger.info("DEBUG Qdrant payload keys=%s sample=%s",
+                        list(first_p.keys()),
+                        {k: str(v)[:80] for k, v in first_p.items()})
+
+
         ranked: List[NewsItem] = []
         for point, score in zip(candidates, scores):
             p = point.payload or {}
             tags = parse_tags(p.get("tags", []))
+            # Support all ID storage patterns:
+            # 1. payload["article_id"] — local/ingest pipeline
+            # 2. payload["id"]         — alternative payload key
+            # 3. str(point.id)         — server ingestion stored CSV id as Qdrant point id
+            article_id = str(
+                p.get("article_id") or p.get("id") or point.id or ""
+            )
             ranked.append(
                 NewsItem(
-                    article_id=str(p.get("article_id", "")),
+                    article_id=article_id,
                     title=p.get("title", ""),
                     summary=p.get("summary", ""),
                     category=tags,

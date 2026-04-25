@@ -111,11 +111,21 @@ export default function InsightModal({ article, onClose }) {
              <span style={{ background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)', color: '#fff', padding: '6px 14px', borderRadius: '30px', fontSize: '0.85rem', fontWeight: 'bold', boxShadow: '0 4px 15px rgba(99, 102, 241, 0.3)' }}>
                Relevancy Match: {(article.score * 100).toFixed(0)}%
              </span>
-             {article.timestamp && (
-               <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', letterSpacing: '0.5px' }}>
-                 {new Date(article.timestamp).toLocaleString()}
-               </span>
-             )}
+             {(() => {
+               const ts = article.timestamp || (fa && fa.published_time_unix);
+               let dateStr = "";
+               if (ts) {
+                 const parsed = new Date(isNaN(ts) ? ts : Number(ts));
+                 if (!isNaN(parsed)) dateStr = parsed.toLocaleString();
+               }
+               if (!dateStr && fa?.published_time) dateStr = fa.published_time;
+               
+               return dateStr ? (
+                 <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                   📅 {dateStr}
+                 </span>
+               ) : null;
+             })()}
              {/* Portfolio Tags / Categories */}
              {article.category && article.category.length > 0 && (
                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginLeft: 'auto' }}>
@@ -128,8 +138,8 @@ export default function InsightModal({ article, onClose }) {
              )}
           </div>
           
-          <h2 style={{ fontSize: '2.5rem', color: '#f8fafc', lineHeight: 1.3, marginBottom: '1rem' }}>
-            {article.title}
+          <h2 style={{ fontSize: '2.5rem', color: '#f8fafc', lineHeight: 1.3, marginBottom: '1rem', fontWeight: 800 }}>
+            {article.title || fa.title || 'Untitled Article'}
           </h2>
           <div style={{ color: '#a5b4fc', fontSize: '1.15rem', marginTop: '1.5rem', fontStyle: 'italic', borderLeft: '4px solid #818cf8', paddingLeft: '1.5rem', lineHeight: 1.6 }}
                dangerouslySetInnerHTML={{ __html: fa.introductory_paragraph || article.summary }} />

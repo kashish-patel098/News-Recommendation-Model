@@ -55,6 +55,7 @@ def _run_recommendation_pipeline(
     qdrant_svc,
     ranking_svc,
     iceberg_svc,
+    use_latest: bool = False,
 ) -> RecommendResponse:
     """Common embed → search → rank → enrich pipeline."""
 
@@ -68,15 +69,21 @@ def _run_recommendation_pipeline(
             detail=f"Embedding service error: {exc}",
         ) from exc
 
-    # Step 2: Qdrant vector search
+    # Step 2: Qdrant Retrieval
     try:
-        candidates = qdrant_svc.search(
-            query_vector=user_embedding,
-            top_k=50,
-            categories=categories if categories else None,
-        )
+        if use_latest:
+            # fetch recently ingested points (e.g. 100) then re-rank them
+            candidates = qdrant_svc.get_latest(limit=100, with_vectors=True)
+            logger.info("Retrieved %d latest candidates for re-ranking", len(candidates))
+        else:
+            # Vector DB search
+            candidates = qdrant_svc.search(
+                query_vector=user_embedding,
+                top_k=50,
+                categories=categories if categories else None,
+            )
     except Exception as exc:
-        logger.exception("Qdrant search failed for user %s", user_id)
+        logger.exception("Qdrant retrieval failed for user %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Vector DB error: {exc}",
@@ -105,7 +112,19 @@ def _run_recommendation_pipeline(
             ids = [item.article_id for item in ranked_news]
             full_articles_map = iceberg_svc.get_by_ids(ids)
             for item in ranked_news:
-                item.full_article = full_articles_map.get(item.article_id)
+                fa = full_articles_map.get(item.article_id)
+                if fa:
+                    item.full_article = fa
+                    # Sync top-level fields if empty (fixes display for older indexed items)
+                    if not item.title and fa.get("title"):
+                        item.title = fa.get("title")
+                    if not item.summary and fa.get("introductory_paragraph"):
+                        item.summary = fa.get("introductory_paragraph")
+                    if item.timestamp is None and fa.get("published_time_unix"):
+                        try:
+                            item.timestamp = int(fa.get("published_time_unix"))
+                        except (ValueError, TypeError):
+                            pass
     except Exception:
         logger.exception("Failed to attach Iceberg articles for user %s — continuing.", user_id)
 
@@ -150,6 +169,7 @@ async def recommend(
         qdrant_svc=qdrant_svc,
         ranking_svc=ranking_svc,
         iceberg_svc=iceberg_svc,
+        use_latest=body.use_latest,
     )
     logger.info("recommend | user=%s | ranked=%d | %.1f ms",
         body.user_id, result.total, (time.perf_counter() - t0) * 1000)
@@ -201,6 +221,7 @@ async def recommend_from_portfolio(
         qdrant_svc=qdrant_svc,
         ranking_svc=ranking_svc,
         iceberg_svc=iceberg_svc,
+        use_latest=body.use_latest,
     )
     logger.info("recommend/portfolio | user=%s | ranked=%d | %.1f ms",
         body.user_id, result.total, (time.perf_counter() - t0) * 1000)
@@ -256,6 +277,71 @@ async def get_article(
             detail=f"Article '{article_id}' not found in Iceberg.",
         )
     return article
+
+
+@router.get(
+    "/news/latest",
+    response_model=RecommendResponse,
+    summary="Fetch latest news articles",
+    description="Returns the 50 most recently indexed news articles, enriched with Iceberg content.",
+)
+async def get_latest_news(
+    limit: int = 50,
+    qdrant_svc=Depends(get_qdrant_service),
+    iceberg_svc=Depends(get_iceberg_service),
+) -> RecommendResponse:
+    try:
+        latest_points = qdrant_svc.get_latest(limit=limit)
+        
+        from app.utils.text_utils import parse_tags
+        
+        news_items = []
+        for p in latest_points:
+            payload = p.payload or {}
+            tags = parse_tags(payload.get("tags", []))
+            article_id = str(payload.get("article_id") or payload.get("id") or getattr(p, "id", ""))
+            
+            news_items.append(
+                NewsItem(
+                    article_id=article_id,
+                    title=payload.get("title", ""),
+                    summary=payload.get("summary", ""),
+                    category=tags,
+                    timestamp=payload.get("timestamp"),
+                    score=1.0, # Not a recommendation search, so default score
+                )
+            )
+            
+        # Attach full content
+        if news_items and iceberg_svc:
+            ids = [item.article_id for item in news_items]
+            full_articles_map = iceberg_svc.get_by_ids(ids)
+            for item in news_items:
+                fa = full_articles_map.get(item.article_id)
+                if fa:
+                    item.full_article = fa
+                    # Sync top-level fields if empty
+                    if not item.title and fa.get("title"):
+                        item.title = fa.get("title")
+                    if not item.summary and fa.get("introductory_paragraph"):
+                        item.summary = fa.get("introductory_paragraph")
+                    if item.timestamp is None and fa.get("published_time_unix"):
+                        try:
+                            item.timestamp = int(fa.get("published_time_unix"))
+                        except:
+                            pass
+                            
+        return RecommendResponse(
+            user_id="anonymous",
+            total=len(news_items),
+            recommendations=news_items,
+        )
+    except Exception as exc:
+        logger.exception("Failed to fetch latest news")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
 
 
 # -- Embed endpoint (used by ec2_vector.js JS service) -------------------------
