@@ -224,7 +224,7 @@ def train(
     logger.info("Fetched %d articles from Iceberg for training.", len(articles))
 
     # Optionally cap to memory limit
-    if max_articles and len(articles) > max_articles and not use_all_data:
+    if max_articles and len(articles) > max_articles:
         random.shuffle(articles)
         articles = articles[:max_articles]
         logger.info("Capped to %d articles (--max-articles).", len(articles))

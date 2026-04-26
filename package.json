@@ -15,7 +15,8 @@
     "dev":         "bash start.sh --dev",
 
     "train":       ".venv/bin/python3 scripts/monthly_train.py",
-    "train:all":   ".venv/bin/python3 scripts/monthly_train.py --all-data"
+    "train:all":   ".venv/bin/python3 scripts/monthly_train.py --all-data",
+    "train:10k":   ".venv/bin/python3 scripts/monthly_train.py --all-data --max-articles 10000 --pairs 40000 --epochs 3"
   },
   "dependencies": {
     "dotenv": "^16.4.0"
