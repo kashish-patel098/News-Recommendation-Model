@@ -38,6 +38,7 @@ export default function PortfolioInputLab({ onSubmit, loading }) {
   );
   const [clickedNews, setClickedNews] = useState('');
   const [useLatest, setUseLatest]   = useState(false);
+  const [days, setDays]             = useState(14);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -49,20 +50,22 @@ export default function PortfolioInputLab({ onSubmit, loading }) {
           portfolio: parsed, 
           interests, 
           categories: [], 
-          use_latest: useLatest 
+          use_latest: useLatest,
+          days: days
         }, 'portfolio');
       } catch {
         alert('Invalid JSON in portfolio field.');
       }
     } else {
       if (!clickedNews.trim()) return alert('Please paste a news article.');
-      onSubmit({ 
-        user_id: userId, 
-        clicked_news: clickedNews, 
-        interests, 
-        categories: [], 
-        use_latest: useLatest 
-      }, 'news');
+        onSubmit({ 
+          user_id: userId, 
+          clicked_news: clickedNews, 
+          interests, 
+          categories: [], 
+          use_latest: useLatest,
+          days: days
+        }, 'news');
     }
   };
 
@@ -126,6 +129,18 @@ export default function PortfolioInputLab({ onSubmit, loading }) {
                   value={interests}
                   onChange={e => setInterests(e.target.value)}
                   style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: '120px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Lookback (Days)
+                </label>
+                <input
+                  type="number"
+                  value={days}
+                  onChange={e => setDays(parseInt(e.target.value) || 0)}
+                  style={inputStyle}
+                  min="0"
                 />
               </div>
             </div>
