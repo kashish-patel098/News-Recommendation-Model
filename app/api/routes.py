@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.models.schemas import (
     HealthResponse,
+    NewsItem,
     PortfolioRecommendRequest,
     RecommendRequest,
     RecommendResponse,
@@ -56,7 +57,7 @@ def _run_recommendation_pipeline(
     ranking_svc,
     iceberg_svc,
     use_latest: bool = False,
-    days: Optional[int] = None,
+    days: int | None = None,
 ) -> RecommendResponse:
     """Common embed → search → rank → enrich pipeline."""
 

@@ -30,7 +30,7 @@ class RecommendRequest(BaseModel):
         default=False,
         description="If True, re-ranks the most recent 100 articles instead of global search.",
     )
-    days: Optional[int] = Field(
+    days: int | None = Field(
         default=None,
         description="Limit search to news from the last N days.",
     )
@@ -78,7 +78,7 @@ class PortfolioRecommendRequest(BaseModel):
         default=False,
         description="If True, re-ranks the most recent 100 articles instead of global search.",
     )
-    days: Optional[int] = Field(
+    days: int | None = Field(
         default=None,
         description="Limit search to news from the last N days.",
     )
