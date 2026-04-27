@@ -170,16 +170,28 @@ class RankingService:
 
 
         ranked: List[NewsItem] = []
-        for point, score in zip(candidates, scores):
+        for point, nn_score in zip(candidates, scores):
             p = point.payload or {}
             tags = parse_tags(p.get("tags", []))
-            # Support all ID storage patterns:
-            # 1. payload["article_id"] — local/ingest pipeline
-            # 2. payload["id"]         — alternative payload key
-            # 3. str(point.id)         — server ingestion stored CSV id as Qdrant point id
+            
+            # Support all ID storage patterns
             article_id = str(
                 p.get("article_id") or p.get("id") or point.id or ""
             )
+
+            # ── Score Blending ────────────────────────────────────────────────
+            # Qdrant score is the raw Cosine Similarity [0, 1].
+            # NN score is the neural relevance [0, 1].
+            # We blend them 50/50 so that even an untrained NN doesn't result in 0%.
+            q_score = float(point.score if point.score is not None else 0.0)
+            n_score = float(nn_score)
+            
+            # If NN score is extremely low (likely untrained), we lean more on Qdrant
+            if n_score < 0.01:
+                final_score = (q_score * 0.8) + (n_score * 0.2)
+            else:
+                final_score = (q_score * 0.5) + (n_score * 0.5)
+
             ranked.append(
                 NewsItem(
                     article_id=article_id,
@@ -187,7 +199,7 @@ class RankingService:
                     summary=p.get("summary", ""),
                     category=tags,
                     timestamp=p.get("timestamp"),
-                    score=float(round(float(score), 6)),
+                    score=float(round(final_score, 6)),
                 )
             )
 
