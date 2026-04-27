@@ -29,6 +29,10 @@ _project_root = str(Path(__file__).parents[1])
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
+# Load environment variables early so modules can access them at load-time
+from dotenv import load_dotenv
+load_dotenv(Path(_project_root) / ".env", override=True)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -50,8 +54,6 @@ logger = logging.getLogger(__name__)
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 def _load_settings() -> dict:
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parents[1] / ".env", override=True)
 
     qdrant_host = os.getenv("QDRANT_HOST", "localhost")
     qdrant_port = os.getenv("QDRANT_PORT", "6333")
