@@ -128,7 +128,13 @@ class RankingService:
             elif isinstance(point.vector, list):
                 vec = np.array(point.vector, dtype=np.float32)
             elif isinstance(point.vector, dict):
-                vec_val = next(iter(point.vector.values()))
+                # Prefer title, then description, then tags
+                vec_val = (
+                    point.vector.get("title") or 
+                    point.vector.get("description") or 
+                    point.vector.get("tags") or 
+                    next(iter(point.vector.values()))
+                )
                 vec = np.array(vec_val, dtype=np.float32)
             else:
                 vec = np.array(point.vector, dtype=np.float32)

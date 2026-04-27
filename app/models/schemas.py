@@ -30,6 +30,10 @@ class RecommendRequest(BaseModel):
         default=False,
         description="If True, re-ranks the most recent 100 articles instead of global search.",
     )
+    days: Optional[int] = Field(
+        default=None,
+        description="Limit search to news from the last N days.",
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -73,6 +77,10 @@ class PortfolioRecommendRequest(BaseModel):
     use_latest: bool = Field(
         default=False,
         description="If True, re-ranks the most recent 100 articles instead of global search.",
+    )
+    days: Optional[int] = Field(
+        default=None,
+        description="Limit search to news from the last N days.",
     )
 
 

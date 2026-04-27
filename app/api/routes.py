@@ -56,6 +56,7 @@ def _run_recommendation_pipeline(
     ranking_svc,
     iceberg_svc,
     use_latest: bool = False,
+    days: Optional[int] = None,
 ) -> RecommendResponse:
     """Common embed → search → rank → enrich pipeline."""
 
@@ -76,11 +77,12 @@ def _run_recommendation_pipeline(
             candidates = qdrant_svc.get_latest(limit=100, with_vectors=True)
             logger.info("Retrieved %d latest candidates for re-ranking", len(candidates))
         else:
-            # Vector DB search
-            candidates = qdrant_svc.search(
+            # Multi-Vector Fusion search across title, desc, tags
+            candidates = qdrant_svc.search_fusion(
                 query_vector=user_embedding,
                 top_k=50,
                 categories=categories if categories else None,
+                days=days,
             )
     except Exception as exc:
         logger.exception("Qdrant retrieval failed for user %s", user_id)
@@ -170,6 +172,7 @@ async def recommend(
         ranking_svc=ranking_svc,
         iceberg_svc=iceberg_svc,
         use_latest=body.use_latest,
+        days=body.days,
     )
     logger.info("recommend | user=%s | ranked=%d | %.1f ms",
         body.user_id, result.total, (time.perf_counter() - t0) * 1000)
@@ -222,6 +225,7 @@ async def recommend_from_portfolio(
         ranking_svc=ranking_svc,
         iceberg_svc=iceberg_svc,
         use_latest=body.use_latest,
+        days=body.days,
     )
     logger.info("recommend/portfolio | user=%s | ranked=%d | %.1f ms",
         body.user_id, result.total, (time.perf_counter() - t0) * 1000)

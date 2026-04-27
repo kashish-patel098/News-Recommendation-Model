@@ -43,6 +43,8 @@ from qdrant_client.models import (
     ScoredPoint,
     VectorParams,
     NamedVector,
+    Prefetch,
+    Fusion,
 )
 
 logger = logging.getLogger(__name__)
@@ -291,6 +293,61 @@ class QdrantService:
         logger.debug(
             "Qdrant search [%s] returned %d results in %.1f ms",
             vector_name, len(results), elapsed_ms,
+        )
+        return results
+
+    def search_fusion(
+        self,
+        query_vector: np.ndarray,
+        top_k: int = 50,
+        categories: Optional[List[str]] = None,
+        days: Optional[int] = None,
+    ) -> List[ScoredPoint]:
+        """
+        Perform a multi-vector fusion search across title, description, and tags.
+        Uses Reciprocal Rank Fusion (RRF) to combine results.
+        """
+        must_filters = []
+        if categories:
+            must_filters.append(
+                FieldCondition(key="tags", match=MatchAny(any=categories))
+            )
+        
+        if days:
+            # Recency filter: timestamp is in ms unix
+            cutoff_ms = int((time.time() - (days * 86400)) * 1000)
+            from qdrant_client.models import Range
+            must_filters.append(
+                FieldCondition(key="timestamp", range=Range(gte=cutoff_ms))
+            )
+
+        query_filter = Filter(must=must_filters) if must_filters else None
+        
+        t0 = time.perf_counter()
+        try:
+            # Query across all three named vectors and fuse them
+            response = self._client.query_points(
+                collection_name=self.collection_name,
+                prefetch=[
+                    Prefetch(query=query_vector.tolist(), using="title", limit=top_k * 2),
+                    Prefetch(query=query_vector.tolist(), using="description", limit=top_k * 2),
+                    Prefetch(query=query_vector.tolist(), using="tags", limit=top_k * 2),
+                ],
+                query=Fusion.RRF,
+                limit=top_k,
+                query_filter=query_filter,
+                with_payload=True,
+                with_vectors=True,
+            )
+            results = response.points
+        except Exception as exc:
+            logger.error("Fusion search failed, falling back to title search: %s", exc)
+            return self.search(query_vector, top_k, categories)
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "Qdrant fusion search [title+desc+tags] returned %d results in %.1f ms",
+            len(results), elapsed_ms,
         )
         return results
 
